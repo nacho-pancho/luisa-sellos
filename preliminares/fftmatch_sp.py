@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 #
 # -*- coding: utf-8 -*-
 """
@@ -30,11 +29,7 @@ import time
 import argparse
 import math
 import csv
-import multiprocessing
-import functools
-
 import scipy.signal as dsp
-
 
 #
 # bibliotecas adicionales necesarias
@@ -112,14 +107,12 @@ def show_match(I,S,i,j):
     img[i0:i1,j0:j1] += 2*seal
     show_image(img)
 
-#---------------------------------------------------------------------------------------
-
 def correlate(img,sello):
     return dsp.correlate( img, sello, method="fft",mode='same' ) 
 
 #---------------------------------------------------------------------------------------
 
-def match_single_stamp(image_scales,seal_scales):
+def detector_fft_un_sello(image_scales,seal_scales):
     #
     # factores de normalizacion
     #
@@ -165,7 +158,7 @@ def match_single_stamp(image_scales,seal_scales):
     
 #---------------------------------------------------------------------------------------
 
-def match_many_stamps(I,stamps,args,scale=0.25):
+def detector_fft(I,seals,args):
     cachedir = args["cachedir"]
     imgname  = args["name"]
     score_cache = os.path.join(cachedir,f"{imgname}-scores.npy")
@@ -177,83 +170,86 @@ def match_many_stamps(I,stamps,args,scale=0.25):
         os.makedirs(cachedir)
     maxw = 0 
     maxh = 0
+    scales = list()
+    scales.append(0.25)
     angles = np.arange(-3,3.5,0.5)
+    #print("Precomputing scales and rotations")
     #
     # tamaño comun para todos los sellos
     #
-    for i in range(len(stamps)):
-        if stamps[i].shape[0] > maxh:
-            maxh = stamps[i].shape[0]
-        if stamps[i].shape[1] > maxw:
-            maxw = stamps[i].shape[1]
+    for i in range(len(seals)):
+        if seals[i].shape[0] > maxh:
+            maxh = seals[i].shape[0]
+        if seals[i].shape[1] > maxw:
+            maxw = seals[i].shape[1]
+    #jp
     # precalcular imagenes escaladas y normalizadas
     #
     # usamos una convolucion para estimar la norma 2 de cada patch de la imagen
     # es la raiz de la suma del cuadrado de los pixeles en cada patch
-    #
-    maxhs = int(np.ceil(1.1*maxh*s))
-    maxws = int(np.ceil(1.1*maxw*s))
-    plantilla1 = np.ones((maxhs,maxws))
-    fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}.npy")
-    if not os.path.exists(fcache):
-        Is =  reducir( I, scale )
-        Isn  = correlate( Is**2, plantilla1 )
-        Isn = np.sqrt(np.maximum(Isn,1e-16))
-        np.save(fcache,Is)            
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}.jpg")
-        imsave(fcache,Is)
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.npy")
-        np.save(fcache,Isn)            
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.jpg")
-        imsave(fcache,Isn)
-        image_data = (Is, Isn)            
-    else:
-        Is = np.load(fcache)
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.npy")
-        Isn = np.load(fcache)
-        image_data = (Is, Isn)            
+    image_scales = dict()
+    for s in scales:
+        maxhs = int(np.ceil(1.1*maxh*s))
+        maxws = int(np.ceil(1.1*maxw*s))
+        plantilla1 = np.ones((maxhs,maxws))
+        fcache = os.path.join(cachedir,f"{imgname}-scale{s:5.3f}.npy")
+        if not os.path.exists(fcache):
+            Is =  reducir( I, s )
+            Isn  = correlate( Is**2, plantilla1 )
+            Isn = np.sqrt(np.maximum(Isn,1e-16))
+            np.save(fcache,Is)            
+            fcache = os.path.join(cachedir,f"{imgname}-scale{s:5.3f}.jpg")
+            imsave(fcache,Is)
+            fcache = os.path.join(cachedir,f"{imgname}-scale{s:5.3f}-norm.npy")
+            np.save(fcache,Isn)            
+            fcache = os.path.join(cachedir,f"{imgname}-scale{s:5.3f}-norm.jpg")
+            imsave(fcache,Isn)
+            image_scales[s] = (Is, Isn)            
+        else:
+            Is = np.load(fcache)
+            fcache = os.path.join(cachedir,f"{imgname}-scale{s:5.3f}-norm.npy")
+            Isn = np.load(fcache)
+            image_scales[s] = (Is, Isn)            
     #
     # precalcular sellos escalados, rotados y normalizados
     #
-    nstamps = len(stamps)
-    rotated_stamps = dict()
-    for i in range( nstamps ):
-        #print(f"seal {i} of {nstamps}")
-        seal = stamps[ i ]
-        maxhs = int(np.ceil(1.1*maxh*s))
-        maxws = int(np.ceil(1.1*maxw*s))
-        for a in angles:
-            aa = abs(a)
-            if a < 0:
-                sgn = '-'
-            else:
-                sgn = '+'
-            fcache = os.path.join(cachedir,f"sello{i:02d}-scale{scale:5.3f}-angle{sgn}{aa:06.3f}.npy")
-            if os.path.exists(fcache):
-                rotated_stamps[a] = np.load(fcache)
-            else:    
-                ssr = reducir( ndimage.rotate( seal, a ), scale ) 
-                sh,sw = ssr.shape
-                sn    = 1.0 / np.linalg.norm( ssr.ravel() )                
-                aux = np.zeros((maxhs,maxws))
-                ioff  = ( maxhs - sh ) // 2
-                joff  = ( maxws - sw ) // 2
-                #print(maxhs,ioff,sh,maxws,joff,sw)
-                aux[ ioff:ioff+sh, joff:joff+sw ] = ssr*sn
-                rotated_stamps[a] = aux
-                np.save(fcache,aux)
-                fcache = os.path.join(cachedir,f"sello{i:02d}-scale{s:5.3f}-angle{sgn}{aa:6.3f}.png")
-                imsave(fcache,aux)
-    #
-    # hacer la comparacion
-    #
-    pool = multiprocessing.Pool()
-    scores = pool.map( functools.partial(match_single_stamp, scale), rotated_stamps)
-    pool.close()
-    pool.join()
-    #if verbose:
-    #    print( f"sello {i:3d} score {score:5.3f}" )
-    #scores.append(score)
+    nseals = len(seals)
+    scores = list()
+    for i in range( nseals ):
+        #print(f"seal {i} of {nseals}")
+        seal = seals[ i ]
+        seal_scales = dict()
+        for s in scales:
+            #print(f"\tscale {s}")
+            seal_scales[s] = dict()
+            maxhs = int(np.ceil(1.1*maxh*s))
+            maxws = int(np.ceil(1.1*maxw*s))
+            for a in angles:
+                aa = abs(a)
+                if a < 0:
+                    sgn = '-'
+                else:
+                    sgn = '+'
+                fcache = os.path.join(cachedir,f"sello{i:02d}-scale{s:5.3f}-angle{sgn}{aa:06.3f}.npy")
+                if os.path.exists(fcache):
+                    seal_scales[s][a] = np.load(fcache)
+                else:    
+                    ssr = reducir( ndimage.rotate( seal, a ), s ) 
+                    sh,sw = ssr.shape
+                    sn    = 1.0 / np.linalg.norm( ssr.ravel() )                
+                    aux = np.zeros((maxhs,maxws))
+                    ioff  = ( maxhs - sh ) // 2
+                    joff  = ( maxws - sw ) // 2
+                    #print(maxhs,ioff,sh,maxws,joff,sw)
+                    aux[ ioff:ioff+sh, joff:joff+sw ] = ssr*sn
+                    seal_scales[s][a] = aux
+                    np.save(fcache,aux)
+                    fcache = os.path.join(cachedir,f"sello{i:02d}-scale{s:5.3f}-angle{sgn}{aa:6.3f}.png")
+                    imsave(fcache,aux)
+        score = detector_fft_un_sello( image_scales, seal_scales )
+        if verbose:
+            print( f"sello {i:3d} score {score:5.3f}" )
+        scores.append(score)
     np.save(score_cache,scores)
     return scores
 #---------------------------------------------------------------------------------------
@@ -272,11 +268,11 @@ if __name__ == '__main__':
       help="path prefix  where to find cache files")
     ap.add_argument("-o","--outdir", type=str, default="../results",
       help="where to store results")
-    ap.add_argument("-l","--list", type=str, default="",
+    ap.add_argument("-l","--list", type=str, default="../datos/r0566.list",
       help="text file where input files are specified")
-    ap.add_argument("-s","--stamps", type=str, default="",
+    ap.add_argument("-s","--seals", type=str, default="../datos/sellos.list",
       help="text file with the list of input seal image files")
-    ap.add_argument("-t","--truth", type=str, default="",
+    ap.add_argument("-t","--truth", type=str, default="../datos/sellos_gt.csv",
       help="ground truth file.")
     args = vars(ap.parse_args())
     #
@@ -288,7 +284,7 @@ if __name__ == '__main__':
     #
     # cargamos sellos
     #
-    stamps_file = args["stamps"]
+    seals_file = args["seals"]
     sellos = list()
  #
  # grond truth
@@ -301,7 +297,7 @@ if __name__ == '__main__':
       key = row[0]
       ground_truth[key] = [ int(r) for r in row[1:-1]] # ultimo es espacio 
  
-    with open(stamps_file) as fl:
+    with open(seals_file) as fl:
         nimage = 0
         for relfname in fl:
             nimage = nimage+1
@@ -312,6 +308,11 @@ if __name__ == '__main__':
             #print(f'cargando sello #{nimage} fname={input_fname}')
             sello = imread(input_fname)
             sellos.append(sello)
+    #
+    # armamos lista de detectores a evaluar
+    #
+    detectores = list()
+    detectores.append(detector_fft)
 
     #
     # abrimos lista de archivos
@@ -362,7 +363,7 @@ if __name__ == '__main__':
             gt = ground_truth[fbase] 
             args["reldir"] = reldir
             args["name"]   = fbase
-            scores = match_many_stamps(img,sellos,args)
+            scores = detector_fft(img,sellos,args)
             print("\ttruth:",gt)
             print("\tscore:",[np.round(d,2) for d in scores])
             all_scores.append(scores)
