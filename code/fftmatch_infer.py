@@ -150,23 +150,24 @@ def match_many_stamps(I,stamps,args,scale=0.25):
     maxws = int(np.ceil(1.1*maxw*scale))
     plantilla1 = np.ones((maxhs,maxws))
     fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}.npy")
-    if not os.path.exists(fcache):
-        Is =  reducir( I, scale )
-        Isn  = correlate( Is**2, plantilla1 )
+    if True:
+        #if not os.path.exists(fcache):
+        Is  = reducir( I, scale )
+        Isn = correlate( Is**2, plantilla1 )
         Isn = np.sqrt(np.maximum(Isn,1e-16))
-        np.save(fcache,Is)            
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}.jpg")
-        imsave(fcache,Is)
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.npy")
-        np.save(fcache,Isn)            
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.jpg")
-        imsave(fcache,Isn)
+        #np.save(fcache,Is)            
+        #fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}.jpg")
+        #imsave(fcache,Is)
+        #fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.npy")
+        #np.save(fcache,Isn)            
+        #fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.jpg")
+        #imsave(fcache,Isn)
         image_data = (Is, Isn)            
-    else:
-        Is = np.load(fcache)
-        fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.npy")
-        Isn = np.load(fcache)
-        image_data = (Is, Isn)            
+    #else:
+    #    Is = np.load(fcache)
+    #    fcache = os.path.join(cachedir,f"{imgname}-scale{scale:5.3f}-norm.npy")
+    #    Isn = np.load(fcache)
+    #    image_data = (Is, Isn)            
     #
     # precalcular sellos escalados, rotados y normalizados
     #
@@ -224,9 +225,9 @@ if __name__ == '__main__':
       help="path prefix  where to find files")
     ap.add_argument("-S", "--stampdir", type=str, default="/luisa/sellos_clasificados",
       help="path prefix  where to find files")
-    ap.add_argument("-c", "--cachedir", type=str, default="../cache",
+    ap.add_argument("-c", "--cachedir", type=str, default="cache",
       help="path prefix  where to find cache files")
-    ap.add_argument("-o","--outdir", type=str, default="../results",
+    ap.add_argument("-o","--outdir", type=str, default="results",
       help="where to store results")
     ap.add_argument("-l","--list", type=str, default="",
       help="text file where input files are specified")
