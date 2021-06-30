@@ -74,13 +74,15 @@ if __name__ == '__main__':
     #
     db   = sqlite3.connect(dbfile)
     db.execute("CREATE TABLE class  (id integer primary key, pathname varchar not null)")
-    db.execute("CREATE TABLE stamp  (hash char[32] primary key, class varchar,"
+    db.execute("CREATE TABLE stamp  (id integer primary key, "
+               "hash char[32], class varchar,"
                "filename varchar not null, width integer, "
                "height integer, pixels varchar )")
     #
     # first pass: scan stamps, sizes, binary hash
     #
     nstamps = 0
+    nclasses = 0
     maxw = 0
     maxh = 0
     print('FIRST PASS')
@@ -119,9 +121,10 @@ if __name__ == '__main__':
             #
             if stamp_class not in classes:
                 classes.add(stamp_class)
-                db.execute('INSERT INTO class VALUES (:id,:pathname)',{'id':nstamps,'pathname':stamp_class})
-            db.execute('INSERT INTO stamp VALUES (:hash,:filename,:class,:width,:height,:pixels)',
-                    {'hash':hash,'filename':stamp_sample,'class':stamp_class,'width':w,'height':h,'pixels':pix64})
+                db.execute('INSERT INTO class VALUES (:id,:pathname)',{'id':nclasses,'pathname':stamp_class})
+                nclasses += 1
+            db.execute('INSERT INTO stamp VALUES (:id,:hash,:filename,:class,:width,:height,:pixels)',
+                    {'id':nstamps,'hash':hash,'filename':stamp_sample,'class':stamp_class,'width':w,'height':h,'pixels':pix64})
             if w > maxw:
                 maxw = w
             if h > maxh:
@@ -133,12 +136,13 @@ if __name__ == '__main__':
     # create cache with rotated images
     #
     print('SECOND PASS')
-    db.execute("CREATE TABLE cache (stamp_hash char[32], scale real, angle real, pixels varchar )")
+    db.execute("CREATE TABLE cache (stamp_id integer, "
+               "height integer, width integer, "
+               "scale real, angle real, pixels varchar )")
     total_stamps = nstamps
     nstamps = 0
     with open(list_file) as fl:
         for relfname in fl:
-            nstamps += 1
             print(nstamps,'/',total_stamps)
             #
             # locations, filenames, etc.
@@ -164,13 +168,12 @@ if __name__ == '__main__':
                 #smallh = int(np.power(2, np.ceil(np.log2(maxh * scale))))
                 #smallw = int(np.power(2, np.ceil(np.log2(maxw * scale))))
                 scaled_img = transform.rescale(stamp_img, scale, order=3, mode='constant', cval=1.0, anti_aliasing=True)
-                scaled_h, scaled_w = scaled_img.shape
                 #pad_top = (smallh - scaled_h) // 2
                 #pad_bottom = smallh - scaled_h - pad_top
                 #pad_left = (smallw - scaled_w) // 2
                 #pad_right  = smallw - scaled_w - pad_left
                 #padded_img = np.pad(scaled_img,((pad_top,pad_bottom),(pad_left,pad_right)),mode='constant',constant_values=1.0 )
-                padded_img = np.pad(scaled_img,((20,20),(20,20)),mode='constant',constant_values=1.0 )
+                padded_img = np.pad(scaled_img,((20,20),(20,20)),mode='constant',constant_values=1)
                 #padded_img = scaled_img
                 for angle in angles:
                     scaled_rotated_img = transform.rotate(padded_img,angle,order=3,mode='constant',cval=1)
@@ -178,12 +181,10 @@ if __name__ == '__main__':
                     scaled_rotated_img[scaled_rotated_img > 1.0] = 1.0
                     scaled_rotated_img = (255.0*scaled_rotated_img).astype(np.uint8)
                     pix64 = base64.b64encode(scaled_rotated_img.tobytes())
-                    db.execute('INSERT INTO cache VALUES (:stamp_hash,:scale,:angle,:pixels)',
-                       {'stamp_hash':stamp_hash,'scale':scale,'angle':angle,'pixels':pix64})
-                    if nstamps == 10:
-                        io.imsave(f'example_s{scale:05.2f}_a{angle:05.2f}.png',scaled_rotated_img)
-
-            h, w = stamp_img.shape
+                    scaled_h, scaled_w = scaled_rotated_img.shape
+                    db.execute('INSERT INTO cache VALUES (:stamp_id,:height,:width,:scale,:angle,:pixels)',
+                       {'stamp_id':nstamps,'height':scaled_h,'width':scaled_w,'scale':scale,'angle':angle,'pixels':pix64})
+            nstamps += 1
         db.commit()
     print('FINISHED')
     #
